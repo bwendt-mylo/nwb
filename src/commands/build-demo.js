@@ -15,7 +15,8 @@ function getCommandConfig(args) {
 
   let config = {
     babel: {
-      presets: ['react'],
+      presets: [require.resolve('babel-preset-react')],
+      stage: 1,
     },
     devtool: 'source-map',
     entry: {
@@ -29,8 +30,10 @@ function getCommandConfig(args) {
     plugins: {
       html: {
         mountId: 'demo',
-        title: `${pkg.name} ${pkg.version} Demo`,
+        title: args.title || `${pkg.name} ${pkg.version} Demo`,
       },
+      // A vendor bundle can be explicitly enabled with a --vendor flag
+      vendor: args.vendor,
     },
   }
 

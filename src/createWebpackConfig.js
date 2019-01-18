@@ -4,26 +4,26 @@ import path from 'path'
 import autoprefixer from 'autoprefixer'
 import CaseSensitivePathsPlugin from 'case-sensitive-paths-webpack-plugin'
 import CopyPlugin from 'copy-webpack-plugin'
-import ExtractTextPlugin from 'extract-text-webpack-plugin'
 import HtmlPlugin from 'html-webpack-plugin'
-import NpmInstallPlugin from 'npm-install-webpack2-plugin' // XXX Temporary
-import webpack, {optimize} from 'webpack'
+import MiniCssExtractPlugin from 'mini-css-extract-plugin'
+import NpmInstallPlugin from '@insin/npm-install-webpack-plugin'
+import webpack from 'webpack'
 import merge from 'webpack-merge'
 
 import createBabelConfig from './createBabelConfig'
 import debug from './debug'
 import {UserError} from './errors'
-import {deepToString, typeOf} from './utils'
+import {deepToString, replaceArrayMerge, typeOf} from './utils'
 import StatusPlugin from './WebpackStatusPlugin'
 
 type LoaderConfig = {
   loader?: string,
   options?: Object
-}
+};
 
-type LoaderConfigFactory = (id: ?string, defaultConfig: LoaderConfig) => LoaderConfig
+type LoaderConfigFactory = (id: ?string, defaultConfig: LoaderConfig) => LoaderConfig;
 
-type UseConfig = Array<string | LoaderConfig>
+type UseConfig = Array<string | LoaderConfig>;
 
 type RuleConfig = {
   test?: RegExp,
@@ -32,14 +32,44 @@ type RuleConfig = {
   loader?: string,
   options?: Object,
   use?: UseConfig
+};
+
+type RuleConfigFactory = (?string, RuleConfig) => ?RuleConfig;
+
+type ServerConfig = boolean | Object;
+
+const DEFAULT_TERSER_CONFIG = {
+  cache: true,
+  parallel: true,
+  sourceMap: true,
 }
 
-type RuleConfigFactory = (?string, RuleConfig) => ?RuleConfig
-
-// Custom merge which replaces arrays instead of merging them. The only arrays
-// used in default options are for PostCSS plugins, which we want the user to be
-// able to completely override.
-let replaceArrayMerge = merge({customizeArray(a, b, key) { return b }})
+function createTerserConfig(userWebpackConfig) {
+  if (userWebpackConfig.debug) {
+    return merge(
+      DEFAULT_TERSER_CONFIG,
+      {
+        terserOptions: {
+          output: {
+            beautify: true,
+          },
+          mangle: false,
+        }
+      },
+      // Preserve user 'compress' config if present, as it affects what gets
+      // removed from the production build.
+      typeof userWebpackConfig.terser === 'object' &&
+      typeof userWebpackConfig.terser.terserConfig === 'object' &&
+      'compress' in userWebpackConfig.terser.terserConfig
+        ? {terserOptions: {compress: userWebpackConfig.terser.terserConfig.compress}}
+        : {}
+    )
+  }
+  return merge(
+    DEFAULT_TERSER_CONFIG,
+    typeof userWebpackConfig.terser === 'object' ? userWebpackConfig.terser : {}
+  )
+}
 
 /**
  * Merge webpack rule config objects.
@@ -81,6 +111,8 @@ export function mergeLoaderConfig(
     loader = {...userConfig}
   }
   else {
+    // The only arrays used in default options are for PostCSS plugins, which we
+    // want the user to be able to completely override.
     loader = replaceArrayMerge(defaultConfig, buildConfig, userConfig)
   }
   if (loader.options && Object.keys(loader.options).length === 0) {
@@ -155,7 +187,7 @@ export function createStyleLoaders(
   options: {
     preprocessor?: ?Object,
     prefix?: ?string,
-    server?: ?boolean
+    server?: ?ServerConfig
   } = {},
 ): UseConfig {
   let {
@@ -166,6 +198,10 @@ export function createStyleLoaders(
   let name = loaderConfigName(prefix)
   let styleLoader = createLoader(name('style'), {
     loader: require.resolve('style-loader'),
+    options: {
+      // Only enable style-loader HMR when we're serving a development build
+      hmr: Boolean(server),
+    }
   })
   let loaders = [
     createLoader(name('css'), {
@@ -178,6 +214,7 @@ export function createStyleLoaders(
     createLoader(name('postcss'), {
       loader: require.resolve('postcss-loader'),
       options: {
+        ident: name('postcss'),
         plugins: createDefaultPostCSSPlugins(userWebpackConfig),
       }
     })
@@ -190,23 +227,25 @@ export function createStyleLoaders(
     ))
   }
 
-  if (server) {
+  if (server || userWebpackConfig.extractCSS === false) {
     loaders.unshift(styleLoader)
     return loaders
   }
   else {
-    return ExtractTextPlugin.extract({
-      fallback: styleLoader,
-      use: loaders,
-    })
+    loaders.unshift(createLoader(name('extract-css'), {
+      loader: MiniCssExtractPlugin.loader,
+    }))
+    return loaders
   }
 }
 
 /**
- * Create style rules for nwb >= 0.16.
+ * Create style rules. By default, creates a single rule for .css files and for
+ * any style preprocessor plugins present. The user can configure this to create
+ * multiple rules if needed.
  */
 function createStyleRules(
-  server: boolean,
+  server: ServerConfig,
   userWebpackConfig: Object,
   pluginConfig: Object,
   createRule: RuleConfigFactory,
@@ -274,59 +313,6 @@ function createStyleRules(
   return styleRules
 }
 
-// TODO Remove in a future version
-/**
- * Create default style rules for nwb < 0.16.
- */
-function createLegacyStyleRules(
-  server: boolean,
-  userWebpackConfig: Object,
-  pluginConfig: Object,
-  createRule: RuleConfigFactory,
-  createLoader: LoaderConfigFactory
-): Array<?RuleConfig> {
-  let styleRules = [
-    createRule('css-pipeline', {
-      test: /\.css$/,
-      use: createStyleLoaders(createLoader, userWebpackConfig, {server}),
-      exclude: /node_modules/,
-    }),
-    createRule('vendor-css-pipeline', {
-      test: /\.css$/,
-      use: createStyleLoaders(createLoader, userWebpackConfig, {prefix: 'vendor', server}),
-      include: /node_modules/,
-    })
-  ]
-
-  if (pluginConfig.cssPreprocessors) {
-    Object.keys(pluginConfig.cssPreprocessors).forEach(id => {
-      let {test, loader: preprocessorLoader} = pluginConfig.cssPreprocessors[id]
-      styleRules.push(
-        createRule(`${id}-pipeline`, {
-          test,
-          use: createStyleLoaders(createLoader, userWebpackConfig, {
-            prefix: id,
-            preprocessor: {id, config: {loader: preprocessorLoader}},
-            server,
-          }),
-          exclude: /node_modules/
-        }),
-        createRule(`vendor-${id}-pipeline`, {
-          test,
-          use: createStyleLoaders(createLoader, userWebpackConfig, {
-            prefix: `vendor-${id}`,
-            preprocessor: {id, config: {loader: preprocessorLoader}},
-            server,
-          }),
-          include: /node_modules/
-        })
-      )
-    })
-  }
-
-  return styleRules
-}
-
 /**
  * Final webpack rules config consists of:
  * - the default set of rules created in this function, with build and user
@@ -338,11 +324,11 @@ function createLegacyStyleRules(
  * - extra rules defined in user config.
  */
 export function createRules(
-  server: boolean,
+  server: ServerConfig,
   buildConfig: Object = {},
   userWebpackConfig: Object = {},
   pluginConfig: Object = {}
-) {
+): RuleConfig[] {
   let createRule = createRuleConfigFactory(buildConfig, userWebpackConfig.rules)
   let createLoader = createLoaderConfigFactory(buildConfig, userWebpackConfig.rules)
 
@@ -401,20 +387,14 @@ export function createRules(
     ...createExtraRules(buildConfig.extra, userWebpackConfig.rules),
   ]
 
-  // Add rules with chained style loaders, using ExtractTextPlugin for builds
-  if (userWebpackConfig.styles === 'old') {
-    // nwb <= 0.15 default
-    rules = rules.concat(createLegacyStyleRules(
-      server, userWebpackConfig, pluginConfig, createRule, createLoader
-    ))
-  }
-  else if (userWebpackConfig.styles !== false) {
+  // Add rules with chained style loaders, using MiniCssExtractPlugin for builds
+  if (userWebpackConfig.styles !== false) {
     rules = rules.concat(createStyleRules(
       server, userWebpackConfig, pluginConfig, createRule, createLoader
     ))
   }
 
-  return rules.filter(rule => rule != null)
+  return rules.filter(Boolean)
 }
 
 /**
@@ -433,26 +413,26 @@ export function createExtraRules(
 }
 
 /**
- * Plugin for HtmlPlugin which inlines content for an extracted Webpack
- * manifest into the HTML page in a <script> tag before other emitted asssets
- * are injected by HtmlPlugin itself.
+ * Plugin for HtmlPlugin which inlines the Webpack runtime code and chunk
+ * manifest into the HTML in a <script> tag before other emitted asssets are
+ * injected by HtmlPlugin itself.
  */
-function injectManifestPlugin() {
-  this.plugin('compilation', (compilation) => {
-    compilation.plugin('html-webpack-plugin-before-html-processing', (data, cb) => {
+function inlineRuntimePlugin() {
+  this.hooks.compilation.tap('inlineRuntimePlugin', compilation => {
+    compilation.hooks.htmlWebpackPluginBeforeHtmlProcessing.tapAsync('inlineRuntimePlugin', (data, cb) => {
       Object.keys(compilation.assets).forEach(key => {
-        if (!key.startsWith('manifest.')) return
+        if (!/^runtime\.[a-z\d]+\.js$/.test(key)) return
         let {children} = compilation.assets[key]
         if (children && children[0]) {
           data.html = data.html.replace(
             /^(\s*)<\/body>/m,
             `$1<script>${children[0]._value}</script>\n$1</body>`
           )
-          // Remove the manifest from HtmlPlugin's assets to
-          // prevent a <script> tag being created for it.
-          var manifestIndex = data.assets.js.indexOf(data.assets.publicPath + key)
-          data.assets.js.splice(manifestIndex, 1)
-          delete data.assets.chunks.manifest
+          // Remove the runtime from HtmlPlugin's assets to prevent a <script>
+          // tag being created for it.
+          var runtimeIndex = data.assets.js.indexOf(data.assets.publicPath + key)
+          data.assets.js.splice(runtimeIndex, 1)
+          delete data.assets.chunks.runtime
         }
       })
       cb(null, data)
@@ -485,13 +465,13 @@ function getCopyPluginArgs(buildConfig, userConfig) {
  *   not handled here, but by the final merge of webpack.extra config).
  */
 export function createPlugins(
-  server: boolean,
+  server: ServerConfig,
   buildConfig: Object = {},
   userConfig: Object = {}
-) {
-  let development = process.env.NODE_ENV === 'development'
+): {optimization: Object, plugins: Object[]} {
   let production = process.env.NODE_ENV === 'production'
 
+  let optimization = {}
   let plugins = [
     // Enforce case-sensitive import paths
     new CaseSensitivePathsPlugin(),
@@ -501,61 +481,49 @@ export function createPlugins(
       ...buildConfig.define,
       ...userConfig.define,
     }),
+    // XXX Workaround until loaders migrate away from using this.options
+    new webpack.LoaderOptionsPlugin({
+      options: {
+        context: process.cwd()
+      }
+    })
   ]
 
   if (server) {
     // HMR is enabled by default but can be explicitly disabled
     if (server.hot !== false) {
-      plugins.push(
-        new webpack.HotModuleReplacementPlugin(),
-        new webpack.NoEmitOnErrorsPlugin(),
-      )
+      plugins.push(new webpack.HotModuleReplacementPlugin())
+      optimization.noEmitOnErrors = true
     }
     if (buildConfig.status) {
       plugins.push(new StatusPlugin(buildConfig.status))
     }
-    // Use paths as names when serving
-    plugins.push(new webpack.NamedModulesPlugin())
   }
   // If we're not serving, we're creating a static build
   else {
-    // Extract CSS required as modules out into files
-    let cssFilename = production ? `[name].[contenthash:8].css` : '[name].css'
-    plugins.push(new ExtractTextPlugin({
-      allChunks: true,
-      filename: cssFilename,
-      ...userConfig.extractText,
-    }))
-
-    // Move modules imported from node_modules/ into a vendor chunk when enabled
-    if (buildConfig.vendor) {
-      plugins.push(new optimize.CommonsChunkPlugin({
-        name: 'vendor',
-        minChunks(module, count) {
-          return (
-            module.resource &&
-            module.resource.includes('node_modules')
-          )
-        }
+    if (userConfig.extractCSS !== false) {
+      // Extract imported stylesheets out into .css files
+      plugins.push(new MiniCssExtractPlugin({
+        filename: production ? `[name].[contenthash:8].css` : '[name].css',
+        ...userConfig.extractCSS,
       }))
     }
 
-    // If we're generating an HTML file, we must be building a web app, so
-    // configure deterministic hashing for long-term caching.
-    if (buildConfig.html) {
-      plugins.push(
-        // Generate stable module ids instead of having Webpack assign integers.
-        // HashedModuleIdsPlugin (vendored from Webpack 2) does this without
-        // adding too much to bundle size and NamedModulesPlugin allows for
-        // easier debugging of development builds.
-        development ? new webpack.NamedModulesPlugin() : new webpack.HashedModuleIdsPlugin(),
-        // The Webpack manifest is normally folded into the last chunk, changing
-        // its hash - prevent this by extracting the manifest into its own
-        // chunk - also essential for deterministic hashing.
-        new optimize.CommonsChunkPlugin({name: 'manifest'}),
-        // Inject the Webpack manifest into the generated HTML as a <script>
-        injectManifestPlugin,
-      )
+    // Move modules imported from node_modules/ into a vendor chunk when enabled
+    if (buildConfig.vendor) {
+      optimization.splitChunks = {
+        // Split the entry chunk too
+        chunks: 'all',
+        // A 'vendors' cacheGroup will get defaulted if it doesn't exist, so
+        // we override it to explicitly set the chunk name.
+        cacheGroups: {
+          vendors: {
+            name: 'vendor',
+            priority: -10,
+            test: /[\\/]node_modules[\\/]/,
+          }
+        }
+      }
     }
   }
 
@@ -564,16 +532,15 @@ export function createPlugins(
       debug: false,
       minimize: true,
     }))
-    if (userConfig.uglify !== false) {
-      plugins.push(new optimize.UglifyJsPlugin(merge({
-        compress: {
-          warnings: false,
-        },
-        output: {
-          comments: false,
-        },
-        sourceMap: true,
-      }, userConfig.uglify)))
+    optimization.minimize = buildConfig.terser !== false && userConfig.terser !== false
+    if (buildConfig.terser !== false && userConfig.terser !== false) {
+      optimization.minimizer = [{
+        apply(compiler: any) {
+          // Lazy load the terser plugin
+          let TerserPlugin = require('terser-webpack-plugin')
+          new TerserPlugin(createTerserConfig(userConfig)).apply(compiler)
+        }
+      }]
     }
   }
 
@@ -585,17 +552,23 @@ export function createPlugins(
       ...buildConfig.html,
       ...userConfig.html,
     }))
+    // Extract the Webpack runtime and manifest into its own chunk
+    // The default runtime chunk name is 'runtime' with this configuration
+    optimization.runtimeChunk = 'single'
+    // Inline the runtime and manifest
+    plugins.push(inlineRuntimePlugin)
   }
 
   // Copy static resources
-  if (buildConfig.copy) {
+  if (buildConfig.copy || userConfig.copy) {
     plugins.push(new CopyPlugin(
       ...getCopyPluginArgs(buildConfig.copy, userConfig.copy)
     ))
   }
 
   // Automatically install missing npm dependencies and add them to package.json
-  // Must be enabled with an --install or --auto-install flag
+  // if present.
+  // Must be enabled with an --install or --auto-install flag.
   if (buildConfig.autoInstall) {
     plugins.push(new NpmInstallPlugin({
       peerDependencies: false,
@@ -614,7 +587,7 @@ export function createPlugins(
     plugins = plugins.concat(buildConfig.extra)
   }
 
-  return plugins
+  return {optimization, plugins}
 }
 
 function createDefaultPostCSSPlugins(userWebpackConfig) {
@@ -632,13 +605,6 @@ function createDefaultPostCSSPlugins(userWebpackConfig) {
 }
 
 export const COMPAT_CONFIGS = {
-  enzyme: {
-    externals: {
-      'react/addons': true,
-      'react/lib/ExecutionEnvironment': true,
-      'react/lib/ReactContext': true,
-    }
-  },
   intl(options: {locales: string[]}) {
     return {
       plugins: [
@@ -668,16 +634,6 @@ export const COMPAT_CONFIGS = {
         )
       ]
     }
-  },
-  sinon: {
-    module: {
-      noParse: [/[/\\]sinon\.js/],
-    },
-    resolve: {
-      alias: {
-        sinon: 'sinon/pkg/sinon',
-      },
-    },
   },
 }
 
@@ -757,9 +713,10 @@ export default function createWebpackConfig(
   }
 
   // Generate config for babel-loader and set it as loader config for the build
-  buildRulesConfig.babel = {options: createBabelConfig(buildBabelConfig, userConfig.babel)}
+  buildRulesConfig.babel = {options: createBabelConfig(buildBabelConfig, userConfig.babel, userConfig.path)}
 
   let webpackConfig = {
+    mode: process.env.NODE_ENV === 'production' ? 'production' : 'development',
     module: {
       rules: createRules(server, buildRulesConfig, userWebpackConfig, pluginConfig),
       strictExportPresence: true,
@@ -768,10 +725,12 @@ export default function createWebpackConfig(
       ...buildOutputConfig,
       ...userOutputConfig,
     },
-    plugins: createPlugins(server, buildPluginConfig, userWebpackConfig),
-    resolve: merge({
-      extensions: ['.js', '.json'],
-    }, buildResolveConfig, userResolveConfig),
+    performance: {
+      hints: false
+    },
+    // Plugins are configured via a 'plugins' list and 'optimization' config
+    ...createPlugins(server, buildPluginConfig, userWebpackConfig),
+    resolve: merge(buildResolveConfig, userResolveConfig),
     resolveLoader: {
       modules: ['node_modules', path.join(__dirname, '../node_modules')],
     },

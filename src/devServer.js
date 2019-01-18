@@ -1,44 +1,46 @@
-import historyAPIFallback from 'connect-history-api-fallback'
-import express from 'express'
+import opn from 'opn'
 import webpack from 'webpack'
+import WebpackDevServer from 'webpack-dev-server'
+import merge from 'webpack-merge'
+
+import debug from './debug'
+import {deepToString, typeOf} from './utils'
 
 /**
- * Start an Express server which uses webpack-dev-middleware to build and serve
- * assets using Webpack's watch mode, and webpack-hot-middleware to hot reload
- * changes in the browser and display compile error overlays.
+ * Use Webpack Dev Server to build and serve assets using Webpack's watch mode,
+ * hot reload changes in the browser and display compile error overlays.
  *
  * Static content is handled by CopyPlugin.
  */
-export default function server(webpackConfig, {fallback, host, port, staticPath}, cb) {
-  let app = express()
+export default function devServer(webpackConfig, serverConfig, url, cb) {
   let compiler = webpack(webpackConfig)
 
-  if (fallback !== false) {
-    app.use(historyAPIFallback())
-  }
+  let {host, open, port, ...otherServerConfig} = serverConfig
 
-  app.use(require('webpack-dev-middleware')(compiler, {
-    noInfo: true,
+  let webpackDevServerOptions = merge({
+    headers: {
+      'Access-Control-Allow-Origin': '*'
+    },
+    historyApiFallback: true,
+    hot: true,
+    overlay: true,
     publicPath: webpackConfig.output.publicPath,
     quiet: true,
     watchOptions: {
       ignored: /node_modules/,
     },
-  }))
+  }, otherServerConfig)
 
-  app.use(require('webpack-hot-middleware')(compiler, {
-    log: false,
-  }))
+  debug('webpack dev server options: %s', deepToString(webpackDevServerOptions))
 
-  function onServerStart(err) {
+  let server = new WebpackDevServer(compiler, webpackDevServerOptions)
+  server.listen(port, host, (err) => {
     if (err) return cb(err)
-  }
-
-  // Only provide host config if it was explicitly specified by the user
-  if (host) {
-    app.listen(port, host, onServerStart)
-  }
-  else {
-    app.listen(port, onServerStart)
-  }
+    if (open) {
+      // --open
+      if (typeOf(open) === 'boolean') opn(url)
+      // --open=firefox
+      else opn(url, {app: open})
+    }
+  })
 }

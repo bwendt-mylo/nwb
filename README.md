@@ -5,13 +5,16 @@
 [![npm package][npm-badge]][npm]
 [![Coveralls][coveralls-badge]][coveralls]
 
+![nwb](resources/cover.jpg)
+
 nwb is a toolkit for:
 
-- [Quick Development with React, Inferno or Preact](#quick-development)
+- [Quick Development with React, Inferno, Preact or vanilla JavaScript](#quick-development)
 - Developing:
   - [React Apps](#react-apps)
   - [Preact Apps](#preact-apps)
   - [Inferno Apps](#inferno-apps)
+  - [Vanilla JavaScript Apps](#vanilla-javascript-apps)
   - [React Components and Libraries](#react-components-and-libraries)
   - [npm Modules for the Web](#npm-modules-for-the-web)
 
@@ -25,7 +28,9 @@ Installing globally provides an `nwb` command for quick development and working 
 npm install -g nwb
 ```
 
-> Using **npm >= 3 is recommended**, as Babel 6 takes significantly more time and disk space to install with npm 2 due to its lack of deduplication.
+> **Note:** if you're using npm 5 and getting an `EACCES: permission denied` error from nwb's PhantomJS dependency while installing globally, try passing an `--unsafe-perm` flag:
+>
+> `npm install -g --unsafe-perm nwb`
 
 To use nwb's tooling in a project, install it as a `devDependency` and use `nwb` commands in `package.json` `"scripts"`:
 
@@ -43,7 +48,7 @@ npm install --save-dev nwb
 
 ## Quick Development
 
-For quick development with [React](https://facebook.github.io/react/), [Inferno](https://infernojs.org/) or [Preact](https://preactjs.com/), use the `nwb react`, `nwb inferno` or `nwb preact` commands.
+For quick development with [React](https://facebook.github.io/react/), [Inferno](https://infernojs.org/), [Preact](https://preactjs.com/) or vanilla JavaScript, use the `nwb react`, `nwb inferno`, `nwb preact` or `nwb web`commands.
 
 ```js
 import React, {Component} from 'react'
@@ -97,8 +102,6 @@ Use `nwb new preact-app` to create a [Preact](https://preactjs.com/) app skeleto
 nwb new preact-app my-app
 ```
 
-npm scripts are as above for React apps.
-
 ## Inferno Apps
 
 Use `nwb new inferno-app` to create an [Inferno](https://infernojs.org/) app skeleton:
@@ -107,7 +110,13 @@ Use `nwb new inferno-app` to create an [Inferno](https://infernojs.org/) app ske
 nwb new inferno-app my-app
 ```
 
-npm scripts are as above for React apps.
+## Vanilla JavaScript Apps
+
+Use `nwb new web-app` to create a vanilla JavaScript app skeleton:
+
+```sh
+nwb new web-app my-app
+```
 
 ## React Components and Libraries
 
@@ -119,7 +128,7 @@ cd my-component/
 
 `npm start` will run a demo app you can use to develop your component or library against.
 
-`npm test` will run the project's tests and `npm run build` will create ES5, ES6 modules and UMD builds for publishing to npm.
+`npm test` will run the project's tests and `npm run build` will create ES5, ES modules and UMD builds for publishing to npm.
 
 **See [Developing React Components and Libraries with nwb](/docs/guides/ReactComponents.md#developing-react-components-and-libraries-with-nwb) for a more detailed guide.**
 
@@ -131,7 +140,7 @@ nwb new web-module my-module
 cd my-module/
 ```
 
-`npm test` will run the project's tests and `npm run build` will create ES5, ES6 modules and UMD builds for publishing to npm.
+`npm test` will run the project's tests and `npm run build` will create ES5, ES modules and UMD builds for publishing to npm.
 
 ## [Guides](/docs/guides/#table-of-contents)
 
@@ -144,7 +153,7 @@ cd my-module/
 - [Features](/docs/Features.md#features)
 - [Commands](/docs/Commands.md#commands)
   - [`nwb`](/docs/Commands.md#nwb)
-  - [`nwb react`, `nwb inferno` and `nwb preact`](docs/guides/QuickDevelopment.md#quick-development-with-nwb)
+  - [`nwb react`, `nwb inferno`, `nwb preact` and `nwb web`](docs/guides/QuickDevelopment.md#quick-development-with-nwb)
 - [Configuration](/docs/Configuration.md#configuration)
   - [Configuration File](/docs/Configuration.md#configuration-file)
   - [Configuration Object](/docs/Configuration.md#configuration-object)
@@ -170,6 +179,8 @@ cd my-module/
 **Manages key development dependencies and configuration for you**. Check out an [example of the effect using nwb had](https://github.com/insin/react-yelp-clone/compare/master...nwb) on the amount of `devDependencies` and configuration to be managed in a real project it was dropped into.
 
 ## MIT Licensed
+
+*Cover image created by [GeorgioWan](https://github.com/GeorgioWan)*
 
 *Operating system icons created with [Icons8](https://icons8.com/)*
 

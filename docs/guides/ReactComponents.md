@@ -2,7 +2,7 @@
 
 nwb supports development of React component/library modules which will be published to npm.
 
-> **Prerequisite:** nwb must be installed globally (we're using version 0.12 in this guide):
+> **Prerequisite:** nwb must be installed globally (we're using version 0.16 in this guide):
 >
 > ```
 > npm install -g nwb
@@ -10,7 +10,7 @@ nwb supports development of React component/library modules which will be publis
 
 - [Creating a New Project](#creating-a-new-project)
   - [Build Configuration Questions](#build-configuration-questions)
-    - [ECMAScript 6 (ES6) Modules Build](#ecmascript-6-es6-modules-build)
+    - [ECMAScript Modules Build](#ecmascript-modules-build)
     - [Universal Module Definition (UMD) Build](#universal-module-definition-umd-build)
 - [Project Layout](#project-layout)
 - [`npm run` Scripts](#npm-run-scripts)
@@ -27,10 +27,11 @@ nwb supports development of React component/library modules which will be publis
   - [Config File](#config-file)
     - [UMD Externals](#umd-externals)
   - [Feature Toggles](#feature-toggles)
+    - [`--copy-files`](#--copy-files)
     - [`--no-demo`](#--no-demo)
-    - [`--no-proptypes`](#--no-proptypes)
+    - [`--[keep-]proptypes`](#--keep-proptypes)
 
-To walk you though the process, we're going to implement a simple `LoadingButton` component, which renders a `<button>` and implements the following requirements:
+To walk you through the process, we're going to implement a simple `LoadingButton` component, which renders a `<button>` and implements the following requirements:
 
 1. The button should take a `loading` prop, representing whichever action it controls being in progress (e.g. loading some data or submitting a form).
 2. The button should be `disabled` when loading, to avoid the double-submission problem.
@@ -52,30 +53,30 @@ You'll be asked a few questions about your project's build configuration.
 
 ### Build Configuration Questions
 
-nwb will always create an ES5 build for your project in `lib/`, which is the primary way it will be used when installed via npm, with default `package.json` `main` config pointing to `lib/index.js`.
+By default, nwb will create a CommonJS build for your project in `lib/`, which is the primary way it will be used when installed via npm, with default `package.json` `main` config pointing to `lib/index.js`.
 
 Configuration questions are asked about *additional* builds
 
-#### ECMAScript 6 (ES6) Modules Build
+#### ECMAScript Modules Build
 
 ```
 Creating a react-component project...
-? Do you want to create an ES6 modules build? (Y/n)
+? Do you want to create an ES modules build? (Y/n)
 ```
 
-An ES6 modules build retains use of ES6 `import` and `export` statements in your code but transpiles everything else to ES5.
+An ES modules build retains use of `import` and `export` statements in your code but transpiles everything else to ES5.
 
-Module bundlers like [Rollup](http://rollupjs.org/) and [Webpack 2](https://webpack.js.org/) can use this build to determine if code was imported but never used and eliminate it from the final bundle.
+Module bundlers like [Webpack](https://webpack.js.org/) and [Rollup](http://rollupjs.org/) can use this build to determine if code was imported but never used and eliminate it from the final bundle.
 
 It's enabled by default, so we can just hit `Enter` to accept the default:
 
 ```
-? Do you want to create an ES6 modules build? Yes
+? Do you want to create an ES modules build? Yes
 ```
 
-> **Note:** nwb will create an ES6 modules build in `es/` when we build the project later.
+> **Note:** nwb will create an ES modules build in `es/` when we build the project later.
 >
->It will also add `"module"` configuration to `package.json`, for use by ES6 module bundlers.
+>It will also add `"module"` configuration to `package.json`, for use by ES module bundlers.
 
 #### Universal Module Definition (UMD) Build
 
@@ -137,7 +138,7 @@ react-loading-button/
 
 ---
 
- `cd` into the project directory and we can get started on our example component:
+`cd` into the project directory and we can get started on our example component:
 
 ```sh
 cd react-loading-button/
@@ -182,7 +183,7 @@ If you're into README Driven Development, it also provides a place to play with 
 
 Let's start by imagining how we'll use our `LoadingButton` component in the demo app:
 
-> **Note:** This Demo component is implemented as an ES6 class extending React's `Component` class, but also using some [experimental language features](http://babeljs.io/docs/plugins/transform-class-properties/) which are part of Babel's [stage 2 preset](http://babeljs.io/docs/plugins/preset-stage-2/), which is enabled by default when using nwb.
+> **Note:** This Demo component is implemented as a class extending React's `Component` class, but also using some [experimental language features](http://babeljs.io/docs/plugins/transform-class-properties/) which are part of Babel's [stage 2 preset](http://babeljs.io/docs/plugins/preset-stage-2/), which is enabled by default when using nwb.
 >
 > Don't sweat the details of these if you're not familiar with them; the most important thing for this guide is the `render()` method.
 
@@ -228,7 +229,8 @@ Once your component is developed, the demo app falls back to its primary purpose
 Here's an example implementation of the `LoadingButton` component:
 
 ```js
-import React, {Component, PropTypes as t} from 'react'
+import t from 'prop-types'
+import React, {Component} from 'react'
 
 class LoadingButton extends Component {
   static propTypes = {
@@ -326,13 +328,13 @@ nwb provides a default setup which keeps your source code repository free from d
 
 `npm run build` will prepare the component for publishing, creating:
 
-- An ES5 build in `lib/`
-- An ES6 modules build in `es/` (enabled by default / without configuration)
+- A CommonJS build in `lib/`
+- An ES modules build in `es/` (enabled by default / without configuration)
 - UMD development and production builds in `umd/` (if configuration is provided)
 
-The ES5 build preserves CommonJS interop using the [`add-module-exports`](https://github.com/59naga/babel-plugin-add-module-exports) plugin, to avoid people using your npm packages via CommonJS `require()` having to tag a `.default` onto every `require()` call.
+The CommonJS build preserves CommonJS interop using the [`add-module-exports`](https://github.com/59naga/babel-plugin-add-module-exports) plugin, to avoid people using your npm packages via CommonJS `require()` having to tag a `.default` onto every `require()` call.
 
-Any `propTypes` declared by ES6 class components or stateless function components will be wrapped with an `if (process.env.NODE_ENV !== 'production')` environment check by default, so they'll be automatically stripped from the production build of apps which use them.
+Any `propTypes` declared by class components or stateless function components will be wrapped with an `if (process.env.NODE_ENV !== 'production')` environment check by default, so they'll be automatically stripped from the production build of apps which use them.
 
 By default nwb will also create a production build of the demo React app in `demo/dist/`, ready for deployment to wherever you want to host the demo (e.g. [Surge](http://surge.sh/) for simple deployment, [GitHub Pages](https://pages.github.com/) for more involved deployment tied in with source control). The demo is configured so it can be served from any directory, so you shouldn't need to configure anything no matter where you're hosting it.
 
@@ -357,6 +359,18 @@ npm publish
 We've demonstrated using nwb to develop and publish a single reusable React component, but the same tooling also applies to developing component libraries (such as [React Bootstrap](http://react-bootstrap.github.io/)) and other React libraries (such as [React Router](https://github.com/reactjs/react-router)).
 
 The main difference with libraries is that the entry point (`src/index.js` by default when using nwb) usually imports and re-exports everything the library provides, for users performing top-level imports or using the UMD build.
+
+To make this easier, nwb uses the Babel `stage-1` preset by default when building `react-component` projects, which allows you to use [export extensions](http://babeljs.io/docs/plugins/transform-export-extensions/) to import and re-export modules using a single `export` statement.
+
+For example, this is a snippet of how [React Bootstrap](https://github.com/react-bootstrap/react-bootstrap) re-exports its components using export extensions:
+
+```js
+export Accordion from './Accordion'
+export Alert from './Alert'
+export Badge from './Badge'
+export Breadcrumb from './Breadcrumb'
+export BreadcrumbItem from './BreadcrumbItem'
+```
 
 ## Build Configuration
 
@@ -391,6 +405,24 @@ module.exports = {
 Pass flags when running the build to toggle certain features off.
 
 > Add feature toggle flags to the `"build"` script in `package.json` if you always want to use them.
+>
+> You can also pass flags to the `npm run build` command if you just want to try them out.
+>
+> You need to pass a `--` argument to indicate all additional arguments should be passed to the command itself, for example:
+>
+> ```sh
+> npm run build -- --no-demo
+> ```
+
+#### `--copy-files`
+
+Enables copying of any non-JavaScript files present in `src/` when transpiling to `lib/` and `es/` during a build.
+
+This is a quick (and dirty - please [create an issue](https://github.com/insin/nwb/issues/new) if there are better ways nwb could help you distribute CSS) hack if you're publishing components which import CSS co-located in `src/` and expect users to have Webpack configured to handle this.
+
+> **Note:** This feature is [implemented by Babel](https://babeljs.io/docs/usage/cli/#babel-copy-files), If you disable both CommonJS and ES Module builds, Babel won't be called and nothing will be copied.
+
+> **Note:** The default `package.json` [`"files"` config](https://docs.npmjs.com/files/package.json#files) for a `react-component` project will also publish a top-level `css/` directory to npm if present - consider using relative requires to this directory if you want to avoid publishing duplicated CSS in `lib/` and `es/`.
 
 #### `--no-demo`
 
@@ -400,16 +432,8 @@ Use this if you want to develop against the demo app using nwb's development ser
 
 > If you don't need the demo app at all, you can delete `demo/`.
 
-#### `--no-proptypes`
+#### `--[keep-]proptypes`
 
 Disables `propTypes` wrapping/stripping.
 
 Use this if your module needs to use `propTypes` at runtime (e.g. for masking `props`), or you think its users might need them.
-
-> You can also pass flags to the `npm run build` command if you just want to try them out.
->
-> You need to pass a `--` argument to indicate all additional arguments should be passed to the command itself, for example:
->
-> ```
-> npm run build -- --no-demo --no-proptypes
-> ```

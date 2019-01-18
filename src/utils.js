@@ -1,4 +1,5 @@
 // @flow
+import path from 'path'
 import util from 'util'
 
 import spawn from 'cross-spawn'
@@ -6,8 +7,11 @@ import fs from 'fs-extra'
 import ora from 'ora'
 import resolve from 'resolve'
 import runSeries from 'run-series'
+import merge from 'webpack-merge'
 
 import debug from './debug'
+
+import type {ErrBack} from './types'
 
 /**
  * Check if the given directories exist and filter out any which don't.
@@ -36,7 +40,7 @@ export function clean(
   desc: string,
   // Paths to delete
   dirs: string[],
-  cb: (error: ?Error) => void,
+  cb: ErrBack,
 ) {
   checkDirectories(dirs, (err, dirs) => {
     if (err != null) return cb(err)
@@ -60,8 +64,7 @@ export function clean(
  * Clear console scrollback.
  */
 export function clearConsole() {
-  // XXX Hack for testing
-  // TODO Give users a way to disable console clearing
+  // Hack for testing
   if (process.env.NWB_TEST) return
   // This will completely wipe scrollback in cmd.exe on Windows - use cmd.exe's
   // `start` command to launch nwb's dev server in a new prompt if you don't
@@ -104,26 +107,28 @@ export function getArgsPlugins(
   return plugins.split(',').map(name => name.replace(/^(nwb-)?/, 'nwb-'))
 }
 
+type InstallOptions = {
+  // Parsed arguments
+  args?: Object,
+  // Check if packages are resolvable from the cwd and skip installation if
+  // already installed.
+  check?: boolean,
+  // Working directory to install in
+  cwd?: string,
+  // Save dependencies to devDependencies
+  dev?: boolean,
+  // Save dependencies to package.json
+  save?: boolean,
+};
+
 /**
  * Install packages from npm.
  */
 export function install(
   // npm package names, which may be in package@version format
   packages: string[],
-  options: {
-    // Parsed arguments
-    args?: Object,
-    // Check if packages are resolvable from the cwd and skip installation if
-    // already installed.
-    check?: boolean,
-    // Working directory to install in
-    cwd?: string,
-    // Save dependencies to devDependencies
-    dev?: boolean,
-    // Save dependencies to package.json
-    save?: boolean
-  },
-  cb: (?Error) => void
+  options: InstallOptions,
+  cb: ErrBack,
 ) {
   let {
     args = null,
@@ -157,7 +162,7 @@ export function install(
     return process.nextTick(cb)
   }
 
-  let npmArgs = ['install', '--silent', '--no-progress']
+  let npmArgs = ['install', '--silent', '--no-progress', '--no-package-lock']
 
   if (save) {
     npmArgs.push(`--save${dev ? '-dev' : ''}`)
@@ -188,6 +193,22 @@ export function joinAnd(array: any[], lastClause: string = 'and') {
 }
 
 /**
+ * Get the path to an npm module.
+ */
+export function modulePath(module: string, basedir: string = process.cwd()): string {
+  return path.dirname(resolve.sync(`${module}/package.json`, {basedir}))
+}
+
+export function pluralise(count: number, suffixes : string = ',s'): string {
+  return suffixes.split(',')[count === 1 ? 0 : 1]
+}
+
+/**
+ * Custom merge which replaces arrays instead of concatenating them.
+ */
+export const replaceArrayMerge = merge({customizeArray(a, b, key) { return b }})
+
+/**
  * Hack to generate simple config file contents by stringifying to JSON, but
  * without JSON formatting.
  */
@@ -208,7 +229,7 @@ export function typeOf(o: any) {
 /**
  * @param {Array<string>} strings
  */
-export function unique(strings: string[]) {
+export function unique(strings: string[]): string[] {
   // eslint-disable-next-line
   return Object.keys(strings.reduce((o, s) => (o[s] = true, o), {}))
 }
